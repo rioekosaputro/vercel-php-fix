@@ -1,0 +1,14 @@
+{
+  "name": "vercel-php-fix",
+  "version": "0.8.0-fix.1",
+  "description": "Thin wrapper around vercel-php@0.8.0 that fixes the Vercel Node bootstrap crash (ERR_MODULE_NOT_FOUND '/var/task/launcher.launcher'). Adapted from vercel-community/php PR #654.",
+  "main": "index.js",
+  "license": "MIT",
+  "keywords": ["vercel", "php", "runtime", "laravel"],
+  "dependencies": {
+    "vercel-php": "0.8.0"
+  },
+  "scripts": {
+    "test": "node test/run.js"
+  }
+}
