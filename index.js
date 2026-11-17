@@ -64,5 +64,12 @@ exports.build = async function build(options) {
     }
   }
 
+  // Saat dipakai lewat `builds` (bukan `functions`), batas durasi diatur dari config builder:
+  //   { "src": "api/index.php", "use": "...", "config": { "maxDuration": 60 } }
+  const configuredDuration = options && options.config && options.config.maxDuration;
+  if (Number.isInteger(configuredDuration) && configuredDuration > 0) {
+    lambdaOptions.maxDuration = configuredDuration;
+  }
+
   return { ...result, output: new NodejsLambda(lambdaOptions) };
 };

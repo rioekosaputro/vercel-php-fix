@@ -142,6 +142,14 @@ const helpers = require('../launchers/helpers');
       assert.strictEqual(output.files['launcher.js'], baseOutput.files['launcher.js']);
       assert.strictEqual(output.files['user/api/index.php'], baseOutput.files['user/api/index.php']);
     });
+    await test('config.maxDuration dari builds[] diteruskan ke fungsi', async () => {
+      const withConfig = await wrapper.build({ config: { maxDuration: 60 } });
+      assert.strictEqual(withConfig.output.maxDuration, 60);
+      const withoutConfig = await wrapper.build({});
+      assert.strictEqual(withoutConfig.output.maxDuration, undefined);
+      const invalid = await wrapper.build({ config: { maxDuration: 'abc' } });
+      assert.strictEqual(invalid.output.maxDuration, undefined);
+    });
     await test('output vercel-php tidak dikenali -> error jelas', async () => {
       fakeBase.build = async () => ({ output: { files: {}, runtime: 'nodejs22.x' } });
       await assert.rejects(() => wrapper.build({}), /launcher\.js tidak ditemukan/);
