@@ -135,11 +135,11 @@ const helpers = require('../launchers/helpers');
       assert.strictEqual(output.runtime, 'nodejs22.x');
       assert.deepStrictEqual(output.environment, { NOW_ENTRYPOINT: 'api/index.php', NOW_PHP_DEV: '0' });
     });
-    await test('helpers.js diganti, file lain utuh', async () => {
+    await test('helpers.js dan launcher.js diganti, file lain utuh', async () => {
       const { output } = await wrapper.build({});
       assert.deepStrictEqual(Object.keys(output.files).sort(), ['helpers.js', 'launcher.js', 'user/api/index.php']);
       assert.strictEqual(path.resolve(output.files['helpers.js'].fsPath), path.resolve(__dirname, '..', 'launchers', 'helpers.js'));
-      assert.strictEqual(output.files['launcher.js'], baseOutput.files['launcher.js']);
+      assert.strictEqual(path.resolve(output.files['launcher.js'].fsPath), path.resolve(__dirname, '..', 'launchers', 'builtin.js'));
       assert.strictEqual(output.files['user/api/index.php'], baseOutput.files['user/api/index.php']);
     });
     await test('config.maxDuration dari builds[] diteruskan ke fungsi', async () => {

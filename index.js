@@ -43,8 +43,9 @@ exports.build = async function build(options) {
 
   const files = {
     ...original.files,
-    // Ganti helpers.js bawaan dengan versi yang sudah diperbaiki.
+    // Ganti helpers.js dan launcher.js bawaan dengan versi yang sudah diperbaiki.
     'helpers.js': new FileFsRef({ fsPath: path.join(__dirname, 'launchers', 'helpers.js') }),
+    'launcher.js': new FileFsRef({ fsPath: path.join(__dirname, 'launchers', 'builtin.js') }),
   };
 
   const lambdaOptions = {

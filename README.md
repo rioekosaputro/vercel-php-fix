@@ -20,7 +20,10 @@ Paket ini memanggil `vercel-php` apa adanya (unduh file, `composer install`, `ph
 
 1. membungkus ulang hasilnya sebagai `NodejsLambda` dengan `handler: 'launcher.js'` dan `awsLambdaHandler: 'launcher.launcher'`;
 2. mengganti `helpers.js` dengan versi yang tahan terhadap `LAMBDA_TASK_ROOT` kosong dan body request berupa `Buffer`/array byte
-   (tanpa ini, POST bisa 502).
+   (tanpa ini, POST bisa 502);
+3. mengganti `launcher.js` agar server PHP memakai **port bebas acak** di `127.0.0.1` (versi asli menulis mati port 3000, yang
+   di bootstrap baru bisa terpakai server Vercel sehingga muncul `SyntaxError: Unexpected end of JSON input` di
+   `/opt/rust/nodejs.js`), serta menahan permintaan yang datang bersamaan saat start dingin sampai server PHP siap.
 
 ## Pemakaian
 Di `vercel.json` proyek, ganti runtime dengan **commit tertentu** repo ini (jangan pakai branch bergerak):
@@ -40,8 +43,11 @@ Vercel CLI menjalankan `npm install` untuk nilai `runtime`, jadi spec GitHub did
 
 ## Tes
 ```bash
-# butuh @vercel/build-utils (mis. milik Vercel CLI) agar kelas Lambda asli bisa dipakai
+# unit: butuh @vercel/build-utils (mis. milik Vercel CLI) agar kelas Lambda asli bisa dipakai
 NODE_PATH="<lokasi>/vercel/node_modules" node test/run.js
+
+# ujung-ke-ujung: butuh PHP di PATH (atau PHP_DIR); termasuk server pengecoh di port 3000
+node test/e2e.js
 ```
 
 ## Catatan keamanan
