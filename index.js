@@ -10,25 +10,77 @@
  *   imported from /opt/rust/nodejs.js
  * (vercel-community/php issue #650).
  *
- * Perbaikan mengikuti PR #654 (vercel-community/php):
- *   1. Fungsi dibuat sebagai NodejsLambda dengan handler 'launcher.js' dan
- *      awsLambdaHandler 'launcher.launcher'.
- *   2. helpers.js diganti versi yang tahan terhadap LAMBDA_TASK_ROOT kosong dan body request
- *      berupa Buffer / array byte (lihat launchers/helpers.js).
+ * Paket ini memanggil vercel-php apa adanya (unduh file, composer install, php.ini, biner PHP),
+ * lalu membungkus ulang hasilnya sebagai NodejsLambda. Dua mode, dipilih lewat `config.mode`
+ * pada entri `builds` di vercel.json:
  *
- * Seluruh perilaku lain (unduh file, composer install, php.ini, PHP binary) tetap dikerjakan
- * oleh vercel-php asli.
+ *   "lambda" (bawaan)  handler 'launcher.js' + awsLambdaHandler 'launcher.launcher' (mengikuti PR #654):
+ *                      bootstrap memanggil launcher dengan event gaya API Gateway.
+ *   "http"             handler 'launcher.js' berupa fungsi Node standar (req, res) yang meneruskan
+ *                      request HTTP asli ke server PHP Built-In (reverse proxy). Tidak bergantung pada
+ *                      bentuk event Lambda.
+ *
+ * `config.probe: true` membuat fungsi diagnostik TANPA PHP (lihat launchers/probe-*.js) untuk
+ * memeriksa kontrak bootstrap pada platform. Jangan dipakai di produksi.
  */
 
 const path = require('path');
 const base = require('vercel-php');
-const { NodejsLambda, FileFsRef } = require('@vercel/build-utils');
+const { NodejsLambda, FileFsRef, getNodeVersion } = require('@vercel/build-utils');
+
+const launchersDir = path.join(__dirname, 'launchers');
+const ref = (name) => new FileFsRef({ fsPath: path.join(launchersDir, name) });
 
 exports.version = base.version;
 exports.shouldServe = base.shouldServe;
 exports.prepareCache = base.prepareCache;
 
+function resolveMode(config) {
+  const mode = config && config.mode !== undefined ? config.mode : 'lambda';
+  if (mode !== 'lambda' && mode !== 'http') {
+    throw new Error(`vercel-php-fix: config.mode harus "lambda" atau "http", bukan ${JSON.stringify(mode)}.`);
+  }
+  return mode;
+}
+
+function configuredDuration(options) {
+  // Saat dipakai lewat `builds` (bukan `functions`), batas durasi diatur dari config builder:
+  //   { "src": "api/index.php", "use": "...", "config": { "maxDuration": 60 } }
+  const value = options && options.config && options.config.maxDuration;
+  return Number.isInteger(value) && value > 0 ? value : undefined;
+}
+
+function lambdaShape(mode) {
+  return mode === 'lambda'
+    ? { handler: 'launcher.js', awsLambdaHandler: 'launcher.launcher' }
+    : { handler: 'launcher.js' };
+}
+
+async function buildProbe(options, mode) {
+  const nodeVersion = await getNodeVersion(options.workPath);
+  console.log(`🐘 vercel-php-fix: membuat fungsi PROBE mode ${mode} (tanpa PHP), runtime ${nodeVersion.runtime}`);
+  const lambdaOptions = {
+    files: {
+      'launcher.js': ref(mode === 'lambda' ? 'probe-lambda.js' : 'probe-http.js'),
+      'introspect.js': ref('introspect.js'),
+    },
+    ...lambdaShape(mode),
+    shouldAddHelpers: false,
+    shouldAddSourcemapSupport: false,
+    runtime: nodeVersion.runtime,
+    environment: {},
+  };
+  const maxDuration = configuredDuration(options);
+  if (maxDuration) lambdaOptions.maxDuration = maxDuration;
+  return { output: new NodejsLambda(lambdaOptions) };
+}
+
 exports.build = async function build(options) {
+  const config = (options && options.config) || {};
+  const mode = resolveMode(config);
+
+  if (config.probe === true) return buildProbe(options, mode);
+
   const result = await base.build(options);
   const original = result && result.output;
 
@@ -39,19 +91,19 @@ exports.build = async function build(options) {
     throw new Error('vercel-php-fix: launcher.js tidak ditemukan di output vercel-php.');
   }
 
-  console.log('🐘 vercel-php-fix: membungkus ulang fungsi sebagai NodejsLambda (handler launcher.js)');
+  console.log(`🐘 vercel-php-fix: membungkus ulang fungsi sebagai NodejsLambda (mode ${mode}, handler launcher.js)`);
 
   const files = {
     ...original.files,
-    // Ganti helpers.js dan launcher.js bawaan dengan versi yang sudah diperbaiki.
-    'helpers.js': new FileFsRef({ fsPath: path.join(__dirname, 'launchers', 'helpers.js') }),
-    'launcher.js': new FileFsRef({ fsPath: path.join(__dirname, 'launchers', 'builtin.js') }),
+    // Ganti launcher bawaan dengan versi yang sudah diperbaiki, beserta modul pendukungnya.
+    'helpers.js': ref('helpers.js'),
+    'phpserver.js': ref('phpserver.js'),
+    'launcher.js': ref(mode === 'lambda' ? 'builtin.js' : 'http.js'),
   };
 
   const lambdaOptions = {
     files,
-    handler: 'launcher.js',
-    awsLambdaHandler: 'launcher.launcher',
+    ...lambdaShape(mode),
     shouldAddHelpers: false,
     shouldAddSourcemapSupport: false,
     runtime: original.runtime,
@@ -64,13 +116,8 @@ exports.build = async function build(options) {
       lambdaOptions[key] = original[key];
     }
   }
-
-  // Saat dipakai lewat `builds` (bukan `functions`), batas durasi diatur dari config builder:
-  //   { "src": "api/index.php", "use": "...", "config": { "maxDuration": 60 } }
-  const configuredDuration = options && options.config && options.config.maxDuration;
-  if (Number.isInteger(configuredDuration) && configuredDuration > 0) {
-    lambdaOptions.maxDuration = configuredDuration;
-  }
+  const maxDuration = configuredDuration(options);
+  if (maxDuration) lambdaOptions.maxDuration = maxDuration;
 
   return { ...result, output: new NodejsLambda(lambdaOptions) };
 };

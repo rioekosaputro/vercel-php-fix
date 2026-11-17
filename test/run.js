@@ -10,6 +10,8 @@
  */
 
 const assert = require('assert');
+const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const Module = require('module');
 
@@ -135,13 +137,49 @@ const helpers = require('../launchers/helpers');
       assert.strictEqual(output.runtime, 'nodejs22.x');
       assert.deepStrictEqual(output.environment, { NOW_ENTRYPOINT: 'api/index.php', NOW_PHP_DEV: '0' });
     });
-    await test('helpers.js dan launcher.js diganti, file lain utuh', async () => {
+    const launcherPath = (name) => path.resolve(__dirname, '..', 'launchers', name);
+
+    await test('helpers.js, phpserver.js, launcher.js diganti/ditambah, file lain utuh', async () => {
       const { output } = await wrapper.build({});
-      assert.deepStrictEqual(Object.keys(output.files).sort(), ['helpers.js', 'launcher.js', 'user/api/index.php']);
-      assert.strictEqual(path.resolve(output.files['helpers.js'].fsPath), path.resolve(__dirname, '..', 'launchers', 'helpers.js'));
-      assert.strictEqual(path.resolve(output.files['launcher.js'].fsPath), path.resolve(__dirname, '..', 'launchers', 'builtin.js'));
+      assert.deepStrictEqual(Object.keys(output.files).sort(), ['helpers.js', 'launcher.js', 'phpserver.js', 'user/api/index.php']);
+      assert.strictEqual(path.resolve(output.files['helpers.js'].fsPath), launcherPath('helpers.js'));
+      assert.strictEqual(path.resolve(output.files['phpserver.js'].fsPath), launcherPath('phpserver.js'));
+      assert.strictEqual(path.resolve(output.files['launcher.js'].fsPath), launcherPath('builtin.js'));
       assert.strictEqual(output.files['user/api/index.php'], baseOutput.files['user/api/index.php']);
     });
+    await test('mode http: handler Node standar tanpa awsLambdaHandler, launcher http.js', async () => {
+      const { output } = await wrapper.build({ config: { mode: 'http' } });
+      assert.ok(output instanceof NodejsLambda);
+      assert.strictEqual(output.handler, 'launcher.js');
+      assert.strictEqual(output.awsLambdaHandler, undefined);
+      assert.strictEqual(output.shouldAddHelpers, false);
+      assert.strictEqual(path.resolve(output.files['launcher.js'].fsPath), launcherPath('http.js'));
+      assert.strictEqual(path.resolve(output.files['phpserver.js'].fsPath), launcherPath('phpserver.js'));
+    });
+    await test('mode tidak dikenal -> error jelas', async () => {
+      await assert.rejects(() => wrapper.build({ config: { mode: 'cgi' } }), /config\.mode harus/);
+    });
+    for (const mode of ['lambda', 'http']) {
+      await test(`probe mode ${mode}: tanpa PHP (base.build tidak dipanggil)`, async () => {
+        let baseCalls = 0;
+        const savedBuild = fakeBase.build;
+        fakeBase.build = async () => { baseCalls++; return savedBuild(); };
+        const workPath = fs.mkdtempSync(path.join(os.tmpdir(), 'vphpfix-probe-'));
+        try {
+          const { output } = await wrapper.build({ workPath, config: { probe: true, mode, maxDuration: 30 } });
+          assert.strictEqual(baseCalls, 0);
+          assert.ok(output instanceof NodejsLambda);
+          assert.strictEqual(output.handler, 'launcher.js');
+          assert.strictEqual(output.awsLambdaHandler, mode === 'lambda' ? 'launcher.launcher' : undefined);
+          assert.strictEqual(output.maxDuration, 30);
+          assert.deepStrictEqual(Object.keys(output.files).sort(), ['introspect.js', 'launcher.js']);
+          assert.strictEqual(path.resolve(output.files['launcher.js'].fsPath), launcherPath(mode === 'lambda' ? 'probe-lambda.js' : 'probe-http.js'));
+        } finally {
+          fakeBase.build = savedBuild;
+          fs.rmSync(workPath, { recursive: true, force: true });
+        }
+      });
+    }
     await test('config.maxDuration dari builds[] diteruskan ke fungsi', async () => {
       const withConfig = await wrapper.build({ config: { maxDuration: 60 } });
       assert.strictEqual(withConfig.output.maxDuration, 60);
